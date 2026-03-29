@@ -1,0 +1,38 @@
+# Cursor
+.cursor/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/vendor/
+go.work
+go.work.sum
+
+# Build output
+/irtrafficgen
+/dist/
+
+# Test & coverage
+*.coverprofile
+coverage.out
+coverage.html
+*.prof
+
+# IDE / editor (optional extras)
+.idea/
+*.swp
+*.swo
+*~

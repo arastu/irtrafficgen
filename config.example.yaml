@@ -1,0 +1,29 @@
+dry_run: true
+
+limits:
+  global_qps: 1
+  max_in_flight: 20
+  per_host_qps: 0.2
+  https_timeout_seconds: 15
+  jitter_min_ms: 50
+  jitter_max_ms: 500
+
+# Omit geosite_lists (or use YAML null) to auto-select every embedded list whose
+# code matches category-*-ir (case-insensitive). Use an empty array for geoip:ir only:
+#   geosite_lists: []
+
+weights:
+  geoip_ir: 2
+  # Optional per-list weights; omitted lists default to 2.0 at validate time.
+  # geosite:
+  #   category-news-ir: 3
+
+safety:
+  deny_private_ips: true
+  allowed_domain_suffixes: []
+
+www_root_domain: false
+insecure_tls: true
+dns_enabled: true
+sni_for_ip: ""
+per_host_limiter_map_max: 2048

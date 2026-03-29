@@ -1,0 +1,44 @@
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag (e.g. v1.0.0). Must not already exist.
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build binaries
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -eux
+          MODULE=github.com/arastu/irtrafficgen/internal/version
+          LDFLAGS="-s -w -X ${MODULE}.Version=${VERSION} -X ${MODULE}.Commit=${GITHUB_SHA}"
+          GOOS=linux  GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o irtrafficgen-linux-amd64 .
+          GOOS=linux  GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o irtrafficgen-linux-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o irtrafficgen-darwin-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$LDFLAGS" -o irtrafficgen-darwin-arm64 .
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.version }}" \
+            --title "${{ inputs.version }}" \
+            --generate-notes \
+            irtrafficgen-linux-amd64 \
+            irtrafficgen-linux-arm64 \
+            irtrafficgen-darwin-amd64 \
+            irtrafficgen-darwin-arm64

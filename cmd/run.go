@@ -80,6 +80,18 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 
 	applog.RunStartup(log, cfg, cfgPath, once, verbose)
 
+	var resolver *net.Resolver
+	if cfg.DNSServer != "" {
+		resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				d := net.Dialer{Timeout: 5 * time.Second}
+				return d.DialContext(ctx, "udp", cfg.DNSServer)
+			},
+		}
+		log.Sugar().Infof("dns_server using custom resolver %s", cfg.DNSServer)
+	}
+
 	runCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -101,7 +113,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 			return nil
 		}
 		onceRng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano())^uint64(time.Now().Unix()), uint64(os.Getpid())))
-		code := doOne(runCtx, cfg, sched, &mc, perHost, log, &opSeq, onceRng, rc, opLim, largeLim, largeSem, &sessionDL, &sessionUL)
+		code := doOne(runCtx, cfg, sched, &mc, perHost, resolver, log, &opSeq, onceRng, rc, opLim, largeLim, largeSem, &sessionDL, &sessionUL)
 		if verbose {
 			applog.MetricsSummary(log, &mc, verbose)
 		}
@@ -119,7 +131,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 		go func() {
 			defer wg.Done()
 			rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano())^uint64(time.Now().Unix()), uint64(os.Getpid())))
-			workerLoop(runCtx, cfg, sched, globalLim, perHost, &mc, log, &opSeq, rng, rc, opLim, largeLim, largeSem, &sessionDL, &sessionUL)
+			workerLoop(runCtx, cfg, sched, globalLim, perHost, resolver, &mc, log, &opSeq, rng, rc, opLim, largeLim, largeSem, &sessionDL, &sessionUL)
 		}()
 	}
 	wg.Wait()
@@ -166,7 +178,7 @@ func asymmetricRuntime(cfg *config.Config) (opLim *gen.OpLimiter, largeLim *rate
 	return opLim, largeLim, largeSem
 }
 
-func workerLoop(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, globalLim *rate.Limiter, perHost *gen.PerHostLimiters, mc *metrics.Counters, log *zap.Logger, opSeq *atomic.Uint64, rng *rand.Rand, rc *gen.RatioController, opLim *gen.OpLimiter, largeLim *rate.Limiter, largeSem chan struct{}, sessionDL, sessionUL *atomic.Uint64) {
+func workerLoop(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, globalLim *rate.Limiter, perHost *gen.PerHostLimiters, resolver *net.Resolver, mc *metrics.Counters, log *zap.Logger, opSeq *atomic.Uint64, rng *rand.Rand, rc *gen.RatioController, opLim *gen.OpLimiter, largeLim *rate.Limiter, largeSem chan struct{}, sessionDL, sessionUL *atomic.Uint64) {
 	for {
 		if err := globalLim.Wait(ctx); err != nil {
 			return
@@ -179,7 +191,7 @@ func workerLoop(ctx context.Context, cfg *config.Config, sched *gen.IranSchedule
 		if err := gen.JitterSleep(ctx, rng, cfg.Limits.JitterMinMS, cfg.Limits.JitterMaxMS); err != nil {
 			return
 		}
-		_ = doOne(ctx, cfg, sched, mc, perHost, log, opSeq, rng, rc, opLim, largeLim, largeSem, sessionDL, sessionUL)
+		_ = doOne(ctx, cfg, sched, mc, perHost, resolver, log, opSeq, rng, rc, opLim, largeLim, largeSem, sessionDL, sessionUL)
 	}
 }
 
@@ -207,7 +219,7 @@ func bumpOpSuccess(mc *metrics.Counters, op gen.OpKind) {
 	}
 }
 
-func doOne(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, mc *metrics.Counters, perHost *gen.PerHostLimiters, log *zap.Logger, opSeq *atomic.Uint64, rng *rand.Rand, rc *gen.RatioController, opLim *gen.OpLimiter, largeLim *rate.Limiter, largeSem chan struct{}, sessionDL, sessionUL *atomic.Uint64) int {
+func doOne(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, mc *metrics.Counters, perHost *gen.PerHostLimiters, resolver *net.Resolver, log *zap.Logger, opSeq *atomic.Uint64, rng *rand.Rand, rc *gen.RatioController, opLim *gen.OpLimiter, largeLim *rate.Limiter, largeSem chan struct{}, sessionDL, sessionUL *atomic.Uint64) int {
 	tgt, err := sched.NextTarget()
 	if err != nil {
 		log.Sugar().Errorf("scheduler_next_target error=%v", err)
@@ -254,7 +266,7 @@ func doOne(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, mc
 
 	if cfg.DNSEnabled && tgt.Host != "" {
 		mc.DNSAttempts.Add(1)
-		_, lerr := gen.LookupHost(ctx, net.DefaultResolver, tgt.Host)
+		_, lerr := gen.LookupHost(ctx, resolver, tgt.Host)
 		applog.LiveDNS(log, tgt.Host, lerr)
 		if lerr != nil {
 			mc.DNSErrors.Add(1)

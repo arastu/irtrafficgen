@@ -41,6 +41,8 @@ www_root_domain: true
 insecure_tls: false
 # After choosing a host target, perform a DNS lookup before HTTPS (counts toward metrics; does not change the chosen host).
 dns_enabled: true
+# Custom DNS server address (host:port). Overridden by DNS_SERVER env var.
+# dns_server: "8.8.8.8:53"
 # Server Name (SNI) sent when connecting by IP; required by many servers for TLS. Empty may cause handshake failures.
 sni_for_ip: "www.google.com"
 # Max distinct hosts tracked by the per-host limiter; oldest entries may be evicted when this is exceeded.

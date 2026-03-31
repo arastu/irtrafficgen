@@ -30,16 +30,17 @@ type Safety struct {
 }
 
 type Config struct {
-	DryRun         bool     `yaml:"dry_run"`
-	Limits         Limits   `yaml:"limits"`
-	GeositeLists   []string `yaml:"geosite_lists"`
-	Weights        Weights  `yaml:"weights"`
-	Safety         Safety   `yaml:"safety"`
-	WWWRootDomain  bool     `yaml:"www_root_domain"`
-	InsecureTLS    bool     `yaml:"insecure_tls"`
-	DNSEnabled     bool     `yaml:"dns_enabled"`
-	SNIForIP       string   `yaml:"sni_for_ip"`
-	PerHostMapMax  int      `yaml:"per_host_limiter_map_max"`
+	DryRun         bool       `yaml:"dry_run"`
+	Limits         Limits     `yaml:"limits"`
+	GeositeLists   []string   `yaml:"geosite_lists"`
+	Weights        Weights    `yaml:"weights"`
+	Safety         Safety     `yaml:"safety"`
+	Asymmetric     Asymmetric `yaml:"asymmetric"`
+	WWWRootDomain  bool       `yaml:"www_root_domain"`
+	InsecureTLS    bool       `yaml:"insecure_tls"`
+	DNSEnabled     bool       `yaml:"dns_enabled"`
+	SNIForIP       string     `yaml:"sni_for_ip"`
+	PerHostMapMax  int        `yaml:"per_host_limiter_map_max"`
 }
 
 func Default() *Config {
@@ -133,6 +134,86 @@ func Validate(c *Config, site *routercommon.GeoSiteList, ip *routercommon.GeoIPL
 	}
 	if c.PerHostMapMax < 1 {
 		c.PerHostMapMax = 2048
+	}
+	if err := validateAsymmetric(c); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateAsymmetric(c *Config) error {
+	a := &c.Asymmetric
+	if !a.Enabled {
+		return nil
+	}
+	if a.DownloadMaxBytes < 1 {
+		return fmt.Errorf("asymmetric.download_max_bytes must be at least 1 when asymmetric.enabled")
+	}
+	if a.UploadMaxBytes < 1 {
+		return fmt.Errorf("asymmetric.upload_max_bytes must be at least 1 when asymmetric.enabled")
+	}
+	w := a.OperationWeights
+	sum := w.Head
+	if w.Get < 0 || w.Head < 0 || w.Post < 0 {
+		return fmt.Errorf("asymmetric.operation_weights must be non-negative")
+	}
+	sum += w.Get + w.Post
+	if sum <= 0 {
+		return fmt.Errorf("asymmetric.operation_weights must have positive sum")
+	}
+	if a.TargetRxTxRatio < 0 {
+		return fmt.Errorf("asymmetric.target_rx_tx_ratio must be non-negative")
+	}
+	if a.GlobalQPSLarge < 0 {
+		return fmt.Errorf("asymmetric.global_qps_large must be non-negative")
+	}
+	if a.ReceiveBytesPerSecond < 0 || a.SendBytesPerSecond < 0 {
+		return fmt.Errorf("asymmetric receive/send bytes_per_second must be non-negative")
+	}
+	if a.MaxRedirects < 0 {
+		return fmt.Errorf("asymmetric.max_redirects must be non-negative")
+	}
+	if a.TransportMaxIdleConnsPerHost < 0 || a.TransportIdleConnTimeoutSec < 0 {
+		return fmt.Errorf("asymmetric transport limits must be non-negative")
+	}
+	if a.HeadEstimateRxBytes < 0 || a.HeadEstimateTxBytes < 0 {
+		return fmt.Errorf("asymmetric head estimate bytes must be non-negative")
+	}
+	if a.RatioAdjustIntervalSec < 0 {
+		return fmt.Errorf("asymmetric.ratio_adjust_interval_seconds must be non-negative")
+	}
+	normalizePath := func(p *string) {
+		s := strings.TrimSpace(*p)
+		if s == "" {
+			s = "/"
+		}
+		if !strings.HasPrefix(s, "/") {
+			s = "/" + s
+		}
+		*p = s
+	}
+	normalizePath(&a.GetPath)
+	normalizePath(&a.PostPath)
+	if a.MaxRedirects == 0 {
+		a.MaxRedirects = 3
+	}
+	if a.TransportMaxIdleConnsPerHost == 0 {
+		a.TransportMaxIdleConnsPerHost = 32
+	}
+	if a.TransportIdleConnTimeoutSec == 0 {
+		a.TransportIdleConnTimeoutSec = 90
+	}
+	if w.Get > 0 && a.MaxConcurrentLargeDownloads < 1 {
+		a.MaxConcurrentLargeDownloads = 2
+	}
+	if a.HeadEstimateRxBytes == 0 {
+		a.HeadEstimateRxBytes = 4096
+	}
+	if a.HeadEstimateTxBytes == 0 {
+		a.HeadEstimateTxBytes = 4096
+	}
+	if a.RatioAdjustIntervalSec == 0 && a.TargetRxTxRatio > 0 {
+		a.RatioAdjustIntervalSec = 30
 	}
 	return nil
 }

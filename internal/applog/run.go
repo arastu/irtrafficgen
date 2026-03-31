@@ -53,6 +53,25 @@ func RunStartup(_ *zap.Logger, cfg *config.Config, configPath string, once, verb
 	fmt.Fprintf(w, "dns_after_sample\t%v\n", cfg.DNSEnabled)
 	fmt.Fprintf(w, "run_mode\t%s\n", runMode)
 	fmt.Fprintf(w, "verbose\t%v\n", verbose)
+	fmt.Fprintf(w, "asymmetric_enabled\t%v\n", cfg.Asymmetric.Enabled)
+	if cfg.Asymmetric.Enabled {
+		aw := cfg.Asymmetric.OperationWeights
+		fmt.Fprintf(w, "asymmetric_weights\thead=%g get=%g post=%g\n", aw.Head, aw.Get, aw.Post)
+		fmt.Fprintf(w, "asymmetric_download_max_bytes\t%d\n", cfg.Asymmetric.DownloadMaxBytes)
+		fmt.Fprintf(w, "asymmetric_upload_max_bytes\t%d\n", cfg.Asymmetric.UploadMaxBytes)
+		if cfg.Asymmetric.TargetRxTxRatio > 0 {
+			fmt.Fprintf(w, "asymmetric_target_rx_tx_ratio\t%g\n", cfg.Asymmetric.TargetRxTxRatio)
+		}
+		if cfg.Asymmetric.GlobalQPSLarge > 0 {
+			fmt.Fprintf(w, "asymmetric_global_qps_large\t%g\n", cfg.Asymmetric.GlobalQPSLarge)
+		}
+		if cfg.Asymmetric.ReceiveBytesPerSecond > 0 {
+			fmt.Fprintf(w, "asymmetric_receive_bps\t%g\n", cfg.Asymmetric.ReceiveBytesPerSecond)
+		}
+		if cfg.Asymmetric.SendBytesPerSecond > 0 {
+			fmt.Fprintf(w, "asymmetric_send_bps\t%g\n", cfg.Asymmetric.SendBytesPerSecond)
+		}
+	}
 	_ = w.Flush()
 
 	if nList == 0 {
@@ -74,13 +93,13 @@ func RunStartup(_ *zap.Logger, cfg *config.Config, configPath string, once, verb
 	fmt.Fprintln(os.Stderr)
 }
 
-func DryOp(log *zap.Logger, seq uint64, tgt gen.Target) {
+func DryOp(log *zap.Logger, seq uint64, tgt gen.Target, op string) {
 	s := log.Sugar()
 	if tgt.Kind == gen.TargetGeoIP {
-		s.Infof("dry_run seq=%d kind=geoip list=%s ip=%s would=https:443", seq, tgt.ListName, tgt.IP.String())
+		s.Infof("dry_run seq=%d kind=geoip list=%s ip=%s op=%s would=https:443", seq, tgt.ListName, tgt.IP.String(), op)
 		return
 	}
-	s.Infof("dry_run seq=%d kind=geosite list=%s host=%s would=https_head", seq, tgt.ListName, tgt.Host)
+	s.Infof("dry_run seq=%d kind=geosite list=%s host=%s op=%s would=https", seq, tgt.ListName, tgt.Host, op)
 }
 
 func LiveTarget(log *zap.Logger, seq uint64, tgt gen.Target) {
@@ -101,32 +120,29 @@ func LiveDNS(log *zap.Logger, host string, err error) {
 	s.Infof("dns_lookup host=%s ok", host)
 }
 
-func LiveHTTPSHost(log *zap.Logger, host string, err error) {
+func LiveHTTPS(log *zap.Logger, op string, url string, err error) {
 	s := log.Sugar()
-	url := "https://" + host + "/"
 	if err != nil {
-		s.Warnf("https_head url=%s error=%v", url, err)
+		s.Warnf("https op=%s url=%s error=%v", op, url, err)
 		return
 	}
-	s.Infof("https_head url=%s ok", url)
+	s.Infof("https op=%s url=%s ok", op, url)
 }
 
-func LiveHTTPSIP(log *zap.Logger, ip string, err error) {
-	s := log.Sugar()
-	url := "https://" + ip + "/"
-	if err != nil {
-		s.Warnf("https_head url=%s error=%v", url, err)
-		return
-	}
-	s.Infof("https_head url=%s ok", url)
-}
-
-func MetricsSummary(_ *zap.Logger, mc *metrics.Counters) {
+func MetricsSummary(_ *zap.Logger, mc *metrics.Counters, verbose bool) {
 	fmt.Fprintln(os.Stderr, "Session metrics")
 	w := tabwriter.NewWriter(os.Stderr, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "metric\tcount")
 	fmt.Fprintf(w, "https_attempts\t%d\n", mc.Attempts.Load())
 	fmt.Fprintf(w, "https_success\t%d\n", mc.Successes.Load())
+	fmt.Fprintf(w, "bytes_sent\t%d\n", mc.BytesSent.Load())
+	fmt.Fprintf(w, "bytes_received\t%d\n", mc.BytesReceived.Load())
+	fmt.Fprintf(w, "head_attempts\t%d\n", mc.HeadAttempts.Load())
+	fmt.Fprintf(w, "head_success\t%d\n", mc.HeadSuccesses.Load())
+	fmt.Fprintf(w, "get_attempts\t%d\n", mc.GetAttempts.Load())
+	fmt.Fprintf(w, "get_success\t%d\n", mc.GetSuccesses.Load())
+	fmt.Fprintf(w, "post_attempts\t%d\n", mc.PostAttempts.Load())
+	fmt.Fprintf(w, "post_success\t%d\n", mc.PostSuccesses.Load())
 	fmt.Fprintf(w, "err_timeout\t%d\n", mc.ErrTimeout.Load())
 	fmt.Fprintf(w, "err_tls\t%d\n", mc.ErrTLS.Load())
 	fmt.Fprintf(w, "err_http\t%d\n", mc.ErrHTTP.Load())
@@ -134,6 +150,15 @@ func MetricsSummary(_ *zap.Logger, mc *metrics.Counters) {
 	fmt.Fprintf(w, "dns_success\t%d\n", mc.DNSSuccesses.Load())
 	fmt.Fprintf(w, "dns_errors\t%d\n", mc.DNSErrors.Load())
 	_ = w.Flush()
+	if verbose {
+		tx := float64(mc.BytesSent.Load())
+		rx := float64(mc.BytesReceived.Load())
+		if tx > 0 {
+			fmt.Fprintf(os.Stderr, "rx_tx_ratio\t%g\n", rx/tx)
+		} else if rx > 0 {
+			fmt.Fprintln(os.Stderr, "rx_tx_ratio\tinf (tx=0)")
+		}
+	}
 	fmt.Fprintln(os.Stderr)
 }
 

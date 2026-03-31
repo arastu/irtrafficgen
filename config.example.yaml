@@ -6,11 +6,11 @@ dry_run: true
 
 limits:
   # Maximum operations started per second across all workers (token bucket).
-  global_qps: 1
+  global_qps: 0.09
   # Concurrent worker goroutines; each waits on the global limiter before work.
   max_in_flight: 1
   # Per-host HTTPS rate cap; set to 0 to disable per-host limiting.
-  per_host_qps: 1
+  per_host_qps: 0
   # Deadline for each HTTPS HEAD (and related TLS handshake).
   https_timeout_seconds: 15
   # Random delay bounds after acquiring the global slot, before the request (milliseconds).
@@ -24,7 +24,7 @@ limits:
 
 weights:
   # Relative weight for sampling a geoip:ir (public IP) target vs. geosite domain targets.
-  geoip_ir: 1
+  geoip_ir: 0
   # Optional per-geosite-list weights; lists not listed here default to 2.0 at validate time.
   # geosite:
   #   category-news-ir: 3
@@ -42,6 +42,37 @@ insecure_tls: false
 # After choosing a host target, perform a DNS lookup before HTTPS (counts toward metrics; does not change the chosen host).
 dns_enabled: true
 # Server Name (SNI) sent when connecting by IP; required by many servers for TLS. Empty may cause handshake failures.
-sni_for_ip: ""
+sni_for_ip: "www.google.com"
 # Max distinct hosts tracked by the per-host limiter; oldest entries may be evicted when this is exceeded.
 per_host_limiter_map_max: 2048
+
+# Asymmetric traffic (download-heavy GET, optional POST upload). When enabled: false, behavior matches older releases (HTTPS HEAD only).
+# Large GET/POST can consume significant bandwidth; use only with authorization and conservative caps.
+asymmetric:
+  enabled: true
+  operation_weights:
+    head: 1
+    get: 9
+    post: 0
+  download_max_bytes: 1048576
+  upload_max_bytes: 65536
+  # Closed-loop bias toward this bytes_received / bytes_sent ratio (0 = fixed weights only).
+  target_rx_tx_ratio: 0
+  ratio_adjust_interval_seconds: 30
+  max_concurrent_large_downloads: 2
+  get_path: /
+  post_path: /
+  # Extra token bucket for GET ops only (0 = use limits.global_qps only).
+  global_qps_large: 0
+  receive_bytes_per_second: 0
+  send_bytes_per_second: 0
+  max_redirects: 3
+  transport_max_idle_conns_per_host: 32
+  transport_idle_conn_timeout_seconds: 90
+  total_download_cap_bytes: 0
+  total_upload_cap_bytes: 0
+  head_estimate_rx_bytes: 4096
+  head_estimate_tx_bytes: 4096
+
+# Example (high download ratio, lab only): asymmetric.enabled: true, get weight 9, head 1, post 0,
+# download_max_bytes: 524288, target_rx_tx_ratio: 20, receive_bytes_per_second capped to your link.

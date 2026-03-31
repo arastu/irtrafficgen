@@ -121,3 +121,51 @@ func TestValidateJitter(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestValidateAsymmetricDisabledNoExtra(t *testing.T) {
+	c := Default()
+	if err := Validate(c, siteIR(), ipIR()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateAsymmetricEnabledOK(t *testing.T) {
+	c := Default()
+	c.Asymmetric.Enabled = true
+	c.Asymmetric.DownloadMaxBytes = 1024
+	c.Asymmetric.UploadMaxBytes = 512
+	c.Asymmetric.OperationWeights = OpWeights{Head: 1, Get: 2, Post: 0}
+	c.Asymmetric.MaxConcurrentLargeDownloads = 2
+	if err := Validate(c, siteIR(), ipIR()); err != nil {
+		t.Fatal(err)
+	}
+	if c.Asymmetric.GetPath != "/" {
+		t.Fatalf("get path %q", c.Asymmetric.GetPath)
+	}
+}
+
+func TestValidateAsymmetricZeroWeights(t *testing.T) {
+	c := Default()
+	c.Asymmetric.Enabled = true
+	c.Asymmetric.DownloadMaxBytes = 1
+	c.Asymmetric.UploadMaxBytes = 1
+	c.Asymmetric.OperationWeights = OpWeights{}
+	if err := Validate(c, siteIR(), ipIR()); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestValidateAsymmetricGetDefaultsConcurrency(t *testing.T) {
+	c := Default()
+	c.Asymmetric.Enabled = true
+	c.Asymmetric.DownloadMaxBytes = 1
+	c.Asymmetric.UploadMaxBytes = 1
+	c.Asymmetric.OperationWeights = OpWeights{Get: 1}
+	c.Asymmetric.MaxConcurrentLargeDownloads = 0
+	if err := Validate(c, siteIR(), ipIR()); err != nil {
+		t.Fatal(err)
+	}
+	if c.Asymmetric.MaxConcurrentLargeDownloads != 2 {
+		t.Fatalf("got %d", c.Asymmetric.MaxConcurrentLargeDownloads)
+	}
+}

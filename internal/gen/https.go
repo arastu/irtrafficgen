@@ -4,71 +4,25 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"strings"
 	"time"
 
-	"golang.org/x/net/http2"
+	"github.com/arastu/irtrafficgen/internal/config"
 )
 
 func HTTPSHead(ctx context.Context, host string, ip net.IP, sniForIP string, timeout time.Duration, insecure bool) error {
-	var u string
-	var serverName string
-	if host != "" {
-		u = "https://" + host + "/"
-		serverName = host
-	} else if ip != nil {
-		if ip.To4() != nil {
-			u = "https://" + ip.String() + "/"
-		} else {
-			u = "https://[" + ip.String() + "]/"
-		}
-		serverName = strings.TrimSpace(sniForIP)
-	} else {
-		return fmt.Errorf("no host or ip")
-	}
-	tlsCfg := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		NextProtos: []string{"h2", "http/1.1"},
-		ServerName: serverName,
-	}
-	if insecure {
-		tlsCfg.InsecureSkipVerify = true
-	}
-	tr := &http.Transport{
-		TLSClientConfig: tlsCfg,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			d := net.Dialer{Timeout: timeout}
-			if host != "" {
-				return d.DialContext(ctx, network, addr)
-			}
-			return d.DialContext(ctx, network, net.JoinHostPort(ip.String(), "443"))
-		},
-	}
-	if err := http2.ConfigureTransport(tr); err != nil {
-		return fmt.Errorf("http2 configure transport: %w", err)
-	}
-	client := &http.Client{Transport: tr, Timeout: timeout}
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
+	cli, err := newHTTPSClient(host, ip, sniForIP, timeout, insecure, nil)
 	if err != nil {
 		return err
 	}
-	if host != "" {
-		req.Host = host
-	}
-	resp, err := client.Do(req)
+	u, _, _, err := buildHTTPSURL(host, ip, "/")
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("http status %d", resp.StatusCode)
-	}
-	return nil
+	cfg := &config.Config{}
+	_, err = doHead(ctx, cli, u, host, cfg)
+	return err
 }
 
 func ClassifyHTTPSError(err error) string {

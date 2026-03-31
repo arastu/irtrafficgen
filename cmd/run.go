@@ -80,6 +80,18 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 
 	applog.RunStartup(log, cfg, cfgPath, once, verbose)
 
+	var resolver *net.Resolver
+	if cfg.DNSServer != "" {
+		resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				d := net.Dialer{Timeout: 5 * time.Second}
+				return d.DialContext(ctx, "udp", cfg.DNSServer)
+			},
+		}
+		log.Sugar().Infof("dns_server using custom resolver %s", cfg.DNSServer)
+	}
+
 	runCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -96,7 +108,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 			applog.RunFooter(log, "stopped before first operation (signal)")
 			return nil
 		}
-		code := doOne(runCtx, cfg, sched, &mc, perHost, log, &opSeq)
+		code := doOne(runCtx, cfg, sched, &mc, perHost, resolver, log, &opSeq)
 		if verbose {
 			applog.MetricsSummary(log, &mc)
 		}
@@ -113,7 +125,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			workerLoop(runCtx, cfg, sched, globalLim, perHost, &mc, log, &opSeq)
+			workerLoop(runCtx, cfg, sched, globalLim, perHost, resolver, &mc, log, &opSeq)
 		}()
 	}
 	wg.Wait()
@@ -128,7 +140,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func workerLoop(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, globalLim *rate.Limiter, perHost *gen.PerHostLimiters, mc *metrics.Counters, log *zap.Logger, opSeq *atomic.Uint64) {
+func workerLoop(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, globalLim *rate.Limiter, perHost *gen.PerHostLimiters, resolver *net.Resolver, mc *metrics.Counters, log *zap.Logger, opSeq *atomic.Uint64) {
 	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano())^uint64(time.Now().Unix()), uint64(os.Getpid())))
 	for {
 		if err := globalLim.Wait(ctx); err != nil {
@@ -142,11 +154,11 @@ func workerLoop(ctx context.Context, cfg *config.Config, sched *gen.IranSchedule
 		if err := gen.JitterSleep(ctx, rng, cfg.Limits.JitterMinMS, cfg.Limits.JitterMaxMS); err != nil {
 			return
 		}
-		_ = doOne(ctx, cfg, sched, mc, perHost, log, opSeq)
+		_ = doOne(ctx, cfg, sched, mc, perHost, resolver, log, opSeq)
 	}
 }
 
-func doOne(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, mc *metrics.Counters, perHost *gen.PerHostLimiters, log *zap.Logger, opSeq *atomic.Uint64) int {
+func doOne(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, mc *metrics.Counters, perHost *gen.PerHostLimiters, resolver *net.Resolver, log *zap.Logger, opSeq *atomic.Uint64) int {
 	tgt, err := sched.NextTarget()
 	if err != nil {
 		log.Sugar().Errorf("scheduler_next_target error=%v", err)
@@ -172,7 +184,7 @@ func doOne(ctx context.Context, cfg *config.Config, sched *gen.IranScheduler, mc
 
 	if cfg.DNSEnabled && tgt.Host != "" {
 		mc.DNSAttempts.Add(1)
-		_, lerr := gen.LookupHost(ctx, net.DefaultResolver, tgt.Host)
+		_, lerr := gen.LookupHost(ctx, resolver, tgt.Host)
 		applog.LiveDNS(log, tgt.Host, lerr)
 		if lerr != nil {
 			mc.DNSErrors.Add(1)

@@ -38,6 +38,7 @@ type Config struct {
 	WWWRootDomain  bool     `yaml:"www_root_domain"`
 	InsecureTLS    bool     `yaml:"insecure_tls"`
 	DNSEnabled     bool     `yaml:"dns_enabled"`
+	DNSServer      string   `yaml:"dns_server"`
 	SNIForIP       string   `yaml:"sni_for_ip"`
 	PerHostMapMax  int      `yaml:"per_host_limiter_map_max"`
 }
@@ -71,6 +72,7 @@ func Default() *Config {
 func Load(path string) (*Config, error) {
 	c := Default()
 	if strings.TrimSpace(path) == "" {
+		applyEnvOverrides(c)
 		return c, nil
 	}
 	b, err := os.ReadFile(path)
@@ -80,7 +82,14 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(b, c); err != nil {
 		return nil, err
 	}
+	applyEnvOverrides(c)
 	return c, nil
+}
+
+func applyEnvOverrides(c *Config) {
+	if v := os.Getenv("DNS_SERVER"); v != "" {
+		c.DNSServer = v
+	}
 }
 
 func Validate(c *Config, site *routercommon.GeoSiteList, ip *routercommon.GeoIPList) error {

@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"golang.org/x/net/http2"
 )
 
 func HTTPSHead(ctx context.Context, host string, ip net.IP, sniForIP string, timeout time.Duration, insecure bool) error {
@@ -45,6 +47,9 @@ func HTTPSHead(ctx context.Context, host string, ip net.IP, sniForIP string, tim
 			}
 			return d.DialContext(ctx, network, net.JoinHostPort(ip.String(), "443"))
 		},
+	}
+	if err := http2.ConfigureTransport(tr); err != nil {
+		return fmt.Errorf("http2 configure transport: %w", err)
 	}
 	client := &http.Client{Transport: tr, Timeout: timeout}
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)

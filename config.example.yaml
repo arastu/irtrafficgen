@@ -8,9 +8,9 @@ limits:
   # Maximum operations started per second across all workers (token bucket).
   global_qps: 1
   # Concurrent worker goroutines; each waits on the global limiter before work.
-  max_in_flight: 20
+  max_in_flight: 1
   # Per-host HTTPS rate cap; set to 0 to disable per-host limiting.
-  per_host_qps: 0.2
+  per_host_qps: 1
   # Deadline for each HTTPS HEAD (and related TLS handshake).
   https_timeout_seconds: 15
   # Random delay bounds after acquiring the global slot, before the request (milliseconds).
@@ -36,9 +36,9 @@ safety:
   allowed_domain_suffixes: []
 
 # For geosite root-domain rules, use hostname www.<domain> instead of the bare apex.
-www_root_domain: false
+www_root_domain: true
 # Skip TLS certificate verification on HTTPS HEAD (common for testing; unsafe on untrusted networks).
-insecure_tls: true
+insecure_tls: false
 # After choosing a host target, perform a DNS lookup before HTTPS (counts toward metrics; does not change the chosen host).
 dns_enabled: true
 # Server Name (SNI) sent when connecting by IP; required by many servers for TLS. Empty may cause handshake failures.

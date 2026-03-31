@@ -1,29 +1,47 @@
+# Example irtrafficgen config. Pass with: irtrafficgen run --config path/to/this/file.yaml
+# Use -live or set dry_run: false to perform real HTTPS (and optional DNS) requests.
+
+# When true, only log what would be sent; no DNS lookups or HTTPS requests.
 dry_run: true
 
 limits:
+  # Maximum operations started per second across all workers (token bucket).
   global_qps: 1
+  # Concurrent worker goroutines; each waits on the global limiter before work.
   max_in_flight: 20
+  # Per-host HTTPS rate cap; set to 0 to disable per-host limiting.
   per_host_qps: 0.2
+  # Deadline for each HTTPS HEAD (and related TLS handshake).
   https_timeout_seconds: 15
+  # Random delay bounds after acquiring the global slot, before the request (milliseconds).
   jitter_min_ms: 50
   jitter_max_ms: 500
 
-# Omit geosite_lists (or use YAML null) to auto-select every embedded list whose
-# code matches category-*-ir (case-insensitive). Use an empty array for geoip:ir only:
+# Which geosite lists to draw domain targets from (names must exist in embedded geosite.dat).
+# Omit the key (or use YAML null) to auto-pick every embedded list matching category-*-ir (case-insensitive).
+# Use an empty array for geoip:ir targets only (no geosite domains):
 #   geosite_lists: []
 
 weights:
-  geoip_ir: 2
-  # Optional per-list weights; omitted lists default to 2.0 at validate time.
+  # Relative weight for sampling a geoip:ir (public IP) target vs. geosite domain targets.
+  geoip_ir: 1
+  # Optional per-geosite-list weights; lists not listed here default to 2.0 at validate time.
   # geosite:
   #   category-news-ir: 3
 
 safety:
+  # When sampling from geoip:ir CIDRs, skip private/reserved addresses so only public IPs are used.
   deny_private_ips: true
+  # If non-empty, only allow hosts that match one of these suffixes (e.g. example.ir). Empty = allow all sampled hosts.
   allowed_domain_suffixes: []
 
+# For geosite root-domain rules, use hostname www.<domain> instead of the bare apex.
 www_root_domain: false
+# Skip TLS certificate verification on HTTPS HEAD (common for testing; unsafe on untrusted networks).
 insecure_tls: true
+# After choosing a host target, perform a DNS lookup before HTTPS (counts toward metrics; does not change the chosen host).
 dns_enabled: true
+# Server Name (SNI) sent when connecting by IP; required by many servers for TLS. Empty may cause handshake failures.
 sni_for_ip: ""
+# Max distinct hosts tracked by the per-host limiter; oldest entries may be evicted when this is exceeded.
 per_host_limiter_map_max: 2048

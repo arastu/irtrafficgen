@@ -42,6 +42,7 @@ type Config struct {
 	DNSServer      string     `yaml:"dns_server"`
 	SNIForIP       string     `yaml:"sni_for_ip"`
 	PerHostMapMax  int        `yaml:"per_host_limiter_map_max"`
+	UserAgent      string     `yaml:"user_agent"`
 }
 
 func Default() *Config {

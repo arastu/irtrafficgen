@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/arastu/irtrafficgen/internal/config"
+	"github.com/arastu/irtrafficgen/internal/version"
 	"golang.org/x/net/http2"
 	"golang.org/x/time/rate"
 )
@@ -158,6 +159,19 @@ func HTTPSURLForLog(host string, ip net.IP, op OpKind, cfg *config.Config) strin
 	return u
 }
 
+func userAgentForRequest(cfg *config.Config) string {
+	if cfg != nil {
+		if s := strings.TrimSpace(cfg.UserAgent); s != "" {
+			return s
+		}
+	}
+	return "irtrafficgen/" + version.Version
+}
+
+func setRequestUserAgent(req *http.Request, cfg *config.Config) {
+	req.Header.Set("User-Agent", userAgentForRequest(cfg))
+}
+
 func doHead(ctx context.Context, cli *http.Client, u, host string, cfg *config.Config) (TrafficResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
 	if err != nil {
@@ -166,6 +180,7 @@ func doHead(ctx context.Context, cli *http.Client, u, host string, cfg *config.C
 	if host != "" {
 		req.Host = host
 	}
+	setRequestUserAgent(req, cfg)
 	resp, err := cli.Do(req)
 	if err != nil {
 		return TrafficResult{}, err
@@ -193,6 +208,7 @@ func doGet(ctx context.Context, cli *http.Client, u, host string, cfg *config.Co
 	if host != "" {
 		req.Host = host
 	}
+	setRequestUserAgent(req, cfg)
 	resp, err := cli.Do(req)
 	if err != nil {
 		return TrafficResult{}, err
@@ -232,6 +248,7 @@ func doPost(ctx context.Context, cli *http.Client, u, host string, cfg *config.C
 	if host != "" {
 		req.Host = host
 	}
+	setRequestUserAgent(req, cfg)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	resp, err := cli.Do(req)
 	if err != nil {

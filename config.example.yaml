@@ -45,6 +45,8 @@ dns_enabled: true
 # dns_server: "8.8.8.8:53"
 # Server Name (SNI) sent when connecting by IP; required by many servers for TLS. Empty may cause handshake failures.
 sni_for_ip: "www.google.com"
+# User-Agent for HTTPS requests. Empty or omitted uses irtrafficgen/<version> (see internal/version).
+user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15"
 # Max distinct hosts tracked by the per-host limiter; oldest entries may be evicted when this is exceeded.
 per_host_limiter_map_max: 2048
 
